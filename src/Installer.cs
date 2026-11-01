@@ -17,7 +17,9 @@ using Microsoft.Win32;
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
 
-public class SetupWindow : Window {
+public class SetupWindow {
+    // 直接使用 XamlReader 加载出的窗口 (x:Name 注册在该窗口的 NameScope 上)
+    public Window Win;
     TextBox txtPath;
     CheckBox chkDesktop, chkStart;
     Grid pageWelcome, pageProg, pageDone;
@@ -26,41 +28,36 @@ public class SetupWindow : Window {
     string installedTo;
 
     public SetupWindow() {
-        Window win;
         using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("installer-ui.xaml"))
-            win = (Window)XamlReader.Load(s);
-        Title = win.Title; Width = win.Width; Height = win.Height;
-        ResizeMode = win.ResizeMode; WindowStartupLocation = win.WindowStartupLocation;
-        Background = win.Background; FontFamily = win.FontFamily;
-        Content = win.Content;
+            Win = (Window)XamlReader.Load(s);
 
-        txtPath = (TextBox)FindName("TxtPath");
-        chkDesktop = (CheckBox)FindName("ChkDesktop");
-        chkStart = (CheckBox)FindName("ChkStartMenu");
-        pageWelcome = (Grid)FindName("PageWelcome");
-        pageProg = (Grid)FindName("PageProgress");
-        pageDone = (Grid)FindName("PageDone");
-        bar = (ProgressBar)FindName("Bar");
-        txtStep = (TextBlock)FindName("TxtStep");
-        txtDoneInfo = (TextBlock)FindName("TxtDoneInfo");
+        txtPath = (TextBox)Win.FindName("TxtPath");
+        chkDesktop = (CheckBox)Win.FindName("ChkDesktop");
+        chkStart = (CheckBox)Win.FindName("ChkStartMenu");
+        pageWelcome = (Grid)Win.FindName("PageWelcome");
+        pageProg = (Grid)Win.FindName("PageProgress");
+        pageDone = (Grid)Win.FindName("PageDone");
+        bar = (ProgressBar)Win.FindName("Bar");
+        txtStep = (TextBlock)Win.FindName("TxtStep");
+        txtDoneInfo = (TextBlock)Win.FindName("TxtDoneInfo");
 
         txtPath.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "DeviceSwitch");
 
-        ((Button)FindName("BtnBrowse")).Click += (s, e) => {
+        ((Button)Win.FindName("BtnBrowse")).Click += (s, e) => {
             using (var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = "选择安装文件夹" })
                 if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK) txtPath.Text = dlg.SelectedPath;
         };
-        ((Button)FindName("BtnCancel1")).Click += (s, e) => Close();
-        ((Button)FindName("BtnClose")).Click += (s, e) => Close();
-        ((Button)FindName("BtnRun")).Click += (s, e) => {
+        ((Button)Win.FindName("BtnCancel1")).Click += (s, e) => Win.Close();
+        ((Button)Win.FindName("BtnClose")).Click += (s, e) => Win.Close();
+        ((Button)Win.FindName("BtnRun")).Click += (s, e) => {
             if (installedTo != null) Process.Start(Path.Combine(installedTo, "DeviceSwitch.exe"));
-            Close();
+            Win.Close();
         };
-        ((Button)FindName("BtnInstall")).Click += (s, e) => DoInstall();
+        ((Button)Win.FindName("BtnInstall")).Click += (s, e) => DoInstall();
     }
 
     void RefreshUi() {
-        Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Render);
+        Win.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Render);
     }
     void SetStep(int pct, string msg) { bar.Value = pct; txtStep.Text = msg; RefreshUi(); }
 
@@ -123,7 +120,7 @@ public class SetupWindow : Window {
             pageProg.Visibility = Visibility.Collapsed;
             pageDone.Visibility = Visibility.Visible;
         } catch (Exception ex) {
-            MessageBox.Show(this, "安装失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Win, "安装失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             pageProg.Visibility = Visibility.Collapsed;
             pageWelcome.Visibility = Visibility.Visible;
         }
@@ -131,7 +128,7 @@ public class SetupWindow : Window {
 
     [STAThread]
     public static int Main() {
-        new Application().Run(new SetupWindow());
+        new Application().Run(new SetupWindow().Win);
         return 0;
     }
 }

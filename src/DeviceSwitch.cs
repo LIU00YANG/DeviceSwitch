@@ -122,7 +122,10 @@ public static class DeviceManager {
     }
 }
 
-public class MainWindow : Window {
+public class MainWindow {
+    // 直接使用 XamlReader 加载出的窗口 (x:Name 注册在该窗口的 NameScope 上,
+    // 不能复制 Content 到新窗口, 否则 FindName 返回 null)
+    public Window Win;
     static readonly string[] Keys = { "Touchpad", "Camera", "Mic", "UsbStorage" };
     Dictionary<string, TextBlock> devsText = new Dictionary<string, TextBlock>();
     Dictionary<string, Border> badge = new Dictionary<string, Border>();
@@ -141,25 +144,19 @@ public class MainWindow : Window {
 
     public MainWindow() {
         // 从嵌入资源加载界面 XAML
-        Window win;
         using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("ui.xaml"))
-            win = (Window)XamlReader.Load(s);
-        // 把 XAML 窗口的内容和属性搬到当前窗口
-        Title = win.Title; Width = win.Width; Height = win.Height;
-        ResizeMode = win.ResizeMode; WindowStartupLocation = win.WindowStartupLocation;
-        Background = win.Background; FontFamily = win.FontFamily;
-        Content = win.Content;
+            Win = (Window)XamlReader.Load(s);
 
         foreach (var k in Keys) {
-            devsText[k] = (TextBlock)FindName(k + "Devs");
-            badge[k] = (Border)FindName(k + "Badge");
-            badgeText[k] = (TextBlock)FindName(k + "BadgeText");
-            sw[k] = (ToggleButton)FindName(k + "Switch");
+            devsText[k] = (TextBlock)Win.FindName(k + "Devs");
+            badge[k] = (Border)Win.FindName(k + "Badge");
+            badgeText[k] = (TextBlock)Win.FindName(k + "BadgeText");
+            sw[k] = (ToggleButton)Win.FindName(k + "Switch");
             string key = k;   // 闭包
             sw[k].Click += (s, e) => OnToggle(key);
         }
-        ((Button)FindName("BtnRefresh")).Click += (s, e) => UpdateAll();
-        ((Button)FindName("BtnDevmgmt")).Click += (s, e) => Process.Start("devmgmt.msc");
+        ((Button)Win.FindName("BtnRefresh")).Click += (s, e) => UpdateAll();
+        ((Button)Win.FindName("BtnDevmgmt")).Click += (s, e) => Process.Start("devmgmt.msc");
         UpdateAll();
     }
 
@@ -197,7 +194,7 @@ public class MainWindow : Window {
         if (devs.Count == 0) return;
 
         if (key == "UsbStorage" && !targetOn) {
-            var r = MessageBox.Show(this,
+            var r = MessageBox.Show(Win,
                 "禁用 USB 存储设备前，请先安全弹出正在使用的 U 盘 / 移动硬盘。\n\n确定要禁用吗？",
                 "确认", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (r != MessageBoxResult.Yes) { UpdateCard(key); return; }
@@ -207,7 +204,7 @@ public class MainWindow : Window {
         try {
             DeviceManager.SetState(devs, targetOn);
         } catch (Exception ex) {
-            MessageBox.Show(this, "操作失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Win, "操作失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         System.Threading.Thread.Sleep(400);
         UpdateCard(key);
@@ -229,7 +226,7 @@ public class MainWindow : Window {
             return 0;
         }
         var app = new Application();
-        app.Run(new MainWindow());
+        app.Run(new MainWindow().Win);
         return 0;
     }
 }
