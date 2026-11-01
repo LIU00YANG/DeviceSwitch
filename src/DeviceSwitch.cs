@@ -63,19 +63,23 @@ public static class DeviceManager {
     static IEnumerable<ManagementObject> FilterDevices(string key, List<ManagementObject> devs) {
         switch (key) {
             case "Touchpad":
-                // 精确式触摸板: 兼容ID含 PNP0C50; 或鼠标类中名称含触摸板特征
+                // 精确式触摸板: 优先只操作 PNP0C50 父设备 (子设备会跟随父设备联动,
+                // 若先动子设备再动父设备会因设备栈消失而报错)
+                var pnp50 = new List<ManagementObject>();
+                var named = new List<ManagementObject>();
                 foreach (var mo in devs) {
                     string cls = mo["PNPClass"] as string ?? "";
                     if (cls == "HIDClass") {
                         var compat = mo["CompatibleID"] as string[];
                         if (compat != null && compat.Any(c => c.IndexOf("PNP0C50", StringComparison.OrdinalIgnoreCase) >= 0)) {
-                            yield return mo; continue;
+                            pnp50.Add(mo); continue;
                         }
-                        if (NameMatch(mo, "触摸板|触控板|Touchpad|Precision")) { yield return mo; continue; }
+                        if (NameMatch(mo, "触摸板|触控板|Touchpad|Precision")) { named.Add(mo); continue; }
                     }
                     if (cls == "Mouse" && NameMatch(mo, "触摸板|触控板|Touchpad|Synaptics|ELAN"))
-                        yield return mo;
+                        named.Add(mo);
                 }
+                foreach (var mo in (pnp50.Count > 0 ? pnp50 : named)) yield return mo;
                 break;
             case "Camera":
                 foreach (var mo in devs) {
@@ -101,22 +105,27 @@ public static class DeviceManager {
         }
     }
 
-    // 用微软签名的 pnputil.exe 启停设备
+    // 通过 PowerShell 的 Enable/Disable-PnpDevice 启停设备 (与设备管理器同款 API)
+    // 注: pnputil /enable-device 对部分 HID 设备返回错误 50, 兼容性差, 弃用
     public static void SetState(IEnumerable<DeviceInfo> devs, bool enable) {
-        string pnputil = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.System), "pnputil.exe");
         foreach (var d in devs) {
-            string args = (enable ? "/enable-device " : "/disable-device ") + "\"" + d.DeviceId + "\"";
-            var psi = new ProcessStartInfo(pnputil, args) {
+            string cmd = (enable ? "Enable" : "Disable") + "-PnpDevice -InstanceId '"
+                       + d.DeviceId.Replace("'", "''") + "' -Confirm:$false";
+            // Base64 编码传参, 避免设备实例 ID 中特殊字符的转义问题
+            string enc = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(cmd));
+            var psi = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -NonInteractive -EncodedCommand " + enc) {
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };
             using (var p = Process.Start(psi)) {
-                p.WaitForExit(15000);
+                string err = p.StandardError.ReadToEnd();
+                p.WaitForExit(20000);
                 if (p.ExitCode != 0)
-                    throw new Exception("pnputil 失败 (" + p.ExitCode + "): " + d.Name);
+                    throw new Exception((enable ? "启用" : "禁用") + "失败: " + d.Name
+                        + (string.IsNullOrWhiteSpace(err) ? "" : " (" + err.Trim() + ")"));
             }
         }
     }
