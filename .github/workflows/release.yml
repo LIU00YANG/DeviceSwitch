@@ -1,0 +1,57 @@
+name: build-sign-release
+
+# 打 tag 触发: git tag v1.0.0 && git push --tags
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-sign:
+    runs-on: windows-latest
+    permissions:
+      actions: read     # SignPath 读取 artifact 需要
+      contents: write   # 创建 Release 需要
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build executables (csc.exe)
+        shell: pwsh
+        run: & "$env:GITHUB_WORKSPACE/src/Build-Native.ps1"
+
+      - name: Package unsigned zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path src/DeviceSwitch.exe, src/Uninstall.exe, src/DeviceSwitch-Setup.exe `
+                           -DestinationPath DeviceSwitch-unsigned.zip -Force
+
+      # SignPath 要求: 必须先作为 GitHub artifact 上传, 再引用其 artifact-id 提交签名
+      - name: Upload unsigned artifact
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          path: DeviceSwitch-unsigned.zip
+
+      # 在仓库 Settings 中配置:
+      #   Secret    SIGNPATH_API_TOKEN
+      #   Variables SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG / SIGNPATH_SIGNING_POLICY_SLUG
+      - name: Sign with SignPath
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
+          project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+          signing-policy-slug: '${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Package signed zip
+        shell: pwsh
+        run: Compress-Archive -Path signed/*.exe -DestinationPath DeviceSwitch-signed.zip -Force
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DeviceSwitch-signed.zip
+          generate_release_notes: true
